@@ -733,26 +733,58 @@ def is_constructive(*texts: str) -> tuple[bool, str]:
 
 # ---------- HERO ----------
 def render_hero():
-    logo_html = ""
-    if LOGO_PATH is not None and LOGO_PATH.exists():
-        mime = _detect_mime(LOGO_PATH)
-        b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
-        logo_html = f'<img src="data:{mime};base64,{b64}" alt="NU Coop Connect"/>'
+    # Hero wrapper: red accent stripe + soft red gradient background
     st.markdown(
         f"""
-        <div class="hero">
-          {logo_html}
-          <div>
-            <div class="title">NU Coop Connect<span class="dot"> ●</span></div>
-            <div class="subtitle">
-              <span class="tag">Anonymous</span>
-              <span>Skill-based co-op reviews — by Huskies, for Huskies.</span>
-            </div>
-          </div>
-        </div>
+        <div style="
+          position: relative;
+          padding: 22px 26px 24px 32px;
+          margin-bottom: 24px;
+          background: linear-gradient(135deg, {SURFACE} 0%, {NU_RED_TINT} 100%);
+          border: 1px solid {BORDER};
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        ">
+          <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+            background: linear-gradient(180deg, {NU_RED} 0%, {NU_RED_DARK} 100%);"></div>
+          <div style="position: absolute; right: -50px; top: -50px; width: 220px; height: 220px;
+            background: radial-gradient(circle, rgba(200, 16, 46, 0.12) 0%, transparent 70%);
+            pointer-events: none;"></div>
         """,
         unsafe_allow_html=True,
     )
+    cols = st.columns([1, 6], gap="medium")
+    with cols[0]:
+        if LOGO_PATH is not None and LOGO_PATH.exists():
+            st.image(str(LOGO_PATH), width=96)
+        else:
+            st.markdown(
+                f"<div style='width:96px; height:96px; border-radius:14px; "
+                f"background: linear-gradient(135deg, {NU_RED} 0%, {NU_RED_DARK} 100%); "
+                f"display:flex; align-items:center; justify-content:center; "
+                f"color:white; font-weight:800; font-size:24px;'>NCC</div>",
+                unsafe_allow_html=True,
+            )
+    with cols[1]:
+        st.markdown(
+            f"""
+            <div style="padding-top: 6px;">
+              <div style="font-size: 30px; font-weight: 800; color: {INK}; letter-spacing: -0.02em; line-height: 1.2;">
+                NU Coop Connect <span style="color: {NU_RED};">●</span>
+              </div>
+              <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <span style="background: {NU_RED}; color: white; padding: 4px 12px; border-radius: 4px;
+                  font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;">Anonymous</span>
+                <span style="color: {INK}; font-weight: 500; font-size: 15px;">
+                  Skill-based co-op reviews — by Huskies, for Huskies.
+                </span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 render_hero()
 
