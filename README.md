@@ -5,11 +5,15 @@ Built with Streamlit + SQLite. **Free to host** on Streamlit Community Cloud.
 
 ## Features
 - Anonymous submission (no login, no email, no NUID)
-- Skill-based reviews: students tag the **skills they earned**, the **courses that helped**, **clubs**, and **prior experience**
-- Browse by **industry**, **co-op role**, and **skills**
+- Per-skill 0–5 ratings grouped by every Northeastern college (Khoury, D'Amore-McKim, COE, Bouvé, COS, CSSH, CAMD, plus soft skills) — 0 = N/A
+- Holland Code (RIASEC) interest alignment
+- Interview process: # rounds, # technical, recruiter style, interview notes
+- Perks checkboxes: paid co-op, paid holidays, health insurance, 401(k), relocation, hybrid, etc.
+- Culture tags: company outings, coffee chat culture, NU alumni density, mentorship, etc.
+- Tag-based filter on Browse: industry, role, skills, college
 - Constructive-review filter (auto-rejects profanity, too-short, or all-caps rants)
-- Stats dashboard (industries, top skills)
-- Northeastern red / black / white styling
+- No single overall star rating (intentional — see About page)
+- Northeastern red / black / white styling, with optional `logo.png` in the project root
 
 ## Run locally
 ```bash
@@ -23,15 +27,15 @@ streamlit run app.py
 3. Click **New app** → pick your repo → main file `app.py` → **Deploy**.
 4. You get a free URL like `https://nu-coop-connect.streamlit.app`.
 
-## Embed in your Squarespace site
+## Embed in Squarespace
 Add a **Code Block** to any Squarespace page:
 ```html
 <iframe src="https://YOUR-APP.streamlit.app/?embed=true"
-        width="100%" height="900" style="border:0;"></iframe>
+        width="100%" height="1100" style="border:0;"></iframe>
 ```
-Or just link to the Streamlit URL from a button.
+Or just link out to the Streamlit URL from a button.
 
-## Note on the database
+## Database note
 SQLite is used because it's zero-config and free. On Streamlit Community Cloud the
 `reviews.db` file lives on the app container's disk, which **resets when the app
 restarts/redeploys**. For long-term storage, swap to a free Postgres on
