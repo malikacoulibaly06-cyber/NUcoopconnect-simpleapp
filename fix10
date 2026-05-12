@@ -1,0 +1,5 @@
+cd "/Users/malikacoulibaly/Documents/Claude/Projects/NU Coop connect"
+rm -f .git/index.lock
+git add app.py
+git commit -m "Disable psycopg prepared statements (Supabase pooler compatibility)"
+git push
