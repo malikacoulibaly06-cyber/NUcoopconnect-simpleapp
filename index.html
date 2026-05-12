@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5">
+  <title>NU Coop Connect — Anonymous Northeastern Co-op Reviews</title>
+  <meta name="description" content="Anonymous, skill-based co-op reviews by and for Northeastern students. Search by industry, role, skills, and college.">
+  <meta property="og:title" content="NU Coop Connect">
+  <meta property="og:description" content="Anonymous, skill-based co-op reviews — by Huskies, for Huskies.">
+  <meta property="og:type" content="website">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: #F0EFEC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .app-frame {
+      border: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* Loading splash while the iframe boots */
+    .splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: linear-gradient(180deg, #F0EFEC 0%, #E8E6E2 100%);
+      color: #2D2D2D;
+      transition: opacity 0.4s ease;
+      z-index: 10;
+    }
+    .splash.hide { opacity: 0; pointer-events: none; }
+    .splash .dot {
+      width: 12px; height: 12px;
+      background: #C8102E;
+      border-radius: 50%;
+      animation: pulse 1s infinite ease-in-out;
+    }
+    .splash .title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #2D2D2D;
+      letter-spacing: -0.01em;
+    }
+    .splash .sub {
+      font-size: 13px;
+      color: #5A5A5A;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.6; }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash" id="splash">
+    <div class="dot"></div>
+    <div class="title">NU Coop Connect</div>
+    <div class="sub">Loading reviews…</div>
+  </div>
+
+  <!-- IMPORTANT: replace YOUR-APP with your actual Streamlit subdomain -->
+  <iframe
+    class="app-frame"
+    id="frame"
+    src="https://YOUR-APP.streamlit.app/?embed=true&embed_options=light_theme"
+    title="NU Coop Connect"
+    allow="clipboard-write"
+    loading="eager">
+  </iframe>
+
+  <script>
+    // Hide splash once the iframe is loaded
+    document.getElementById('frame').addEventListener('load', function () {
+      setTimeout(function () {
+        document.getElementById('splash').classList.add('hide');
+      }, 800);
+    });
+    // Fallback: hide after 12s no matter what
+    setTimeout(function () {
+      document.getElementById('splash').classList.add('hide');
+    }, 12000);
+  </script>
+</body>
+</html>

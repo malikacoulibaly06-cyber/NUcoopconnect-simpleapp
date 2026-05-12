@@ -6,39 +6,50 @@ Skill-based, anonymous, free to host on Streamlit Community Cloud.
 import base64
 import json
 import re
-import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 import streamlit as st
 
 # ---------- CONFIG ----------
 BASE_DIR = Path(__file__).parent
-DB_PATH = BASE_DIR / "reviews.db"
 
 def _find_logo() -> Path | None:
-    # 1. Exact matches first
-    for name in ("logo.png", "logo.jpg", "logo.jpeg", "logo.webp", "logo.svg"):
-        p = BASE_DIR / name
-        if p.exists():
-            return p
-    # 2. Any file whose name contains "logo" or "coop" (case-insensitive)
+    """Find the best logo file in the project folder.
+
+    Rules:
+    - Any .png / .jpg / .jpeg / .webp / .svg in BASE_DIR is a candidate.
+    - Skip obviously-tiny placeholder files (< 4 KB).
+    - Prefer files whose name contains 'logo', 'coop', 'co-op',
+      'husky', 'platform', 'network'.
+    - Among matches, prefer the largest file (real logos are usually heftier).
+    - Last resort: any image file at all.
+    """
     exts = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
-    candidates = [
-        p for p in BASE_DIR.iterdir()
-        if p.is_file()
-        and p.suffix.lower() in exts
-        and any(kw in p.stem.lower() for kw in ("logo", "coop", "husky"))
-    ]
-    if candidates:
-        # Prefer PNG > JPG > WEBP > SVG
-        priority = {".png": 0, ".jpg": 1, ".jpeg": 1, ".webp": 2, ".svg": 3}
-        candidates.sort(key=lambda p: priority.get(p.suffix.lower(), 9))
-        return candidates[0]
-    # 3. Fall back to any image in the folder
-    any_imgs = [p for p in BASE_DIR.iterdir() if p.is_file() and p.suffix.lower() in exts]
-    return any_imgs[0] if any_imgs else None
+    keywords = ("logo", "coop", "co-op", "husky", "platform", "network")
+    try:
+        all_imgs = [p for p in BASE_DIR.iterdir()
+                    if p.is_file() and p.suffix.lower() in exts]
+    except FileNotFoundError:
+        return None
+    if not all_imgs:
+        return None
+
+    # Filter out tiny placeholders
+    substantial = [p for p in all_imgs if p.stat().st_size >= 4_000]
+    pool = substantial or all_imgs
+
+    # Prefer keyword matches
+    matches = [p for p in pool if any(kw in p.stem.lower() for kw in keywords)]
+    pool = matches or pool
+
+    # Largest wins
+    pool.sort(key=lambda p: p.stat().st_size, reverse=True)
+    return pool[0]
 
 LOGO_PATH = _find_logo()
 LOGO_MIME = {
@@ -51,13 +62,15 @@ NU_RED = "#C8102E"
 NU_RED_SOFT = "#E63E55"
 NU_RED_DARK = "#A00D24"
 NU_RED_TINT = "#FCEEF0"   # very faint red wash for accents
-INK = "#2D2D2D"          # primary text (warm dark grey, not black)
-INK_SOFT = "#5A5A5A"     # secondary text
-INK_FAINT = "#8B8B8B"    # captions
-SURFACE = "#FFFFFF"
-SURFACE_2 = "#F8F8F8"    # section backgrounds
-SURFACE_3 = "#F2F2F2"    # subtle dividers
-BORDER = "#E2E2E2"
+INK = "#0F0F0F"          # primary text (near-black for max mobile readability)
+INK_SOFT = "#2B2B2B"     # secondary text (still dark)
+INK_FAINT = "#525252"    # captions (medium-dark)
+SURFACE = "#FFFFFF"      # card surface (white pops against the grey page)
+PAGE_BG = "#F0EFEC"      # warm light grey for whole page
+PAGE_BG_2 = "#E8E6E2"    # slightly darker accent for gradient
+SURFACE_2 = "#F8F8F8"    # secondary
+SURFACE_3 = "#F2F2F2"    # dividers
+BORDER = "#D5D3CE"       # warm border that matches page
 BORDER_RED = "#F2CFD4"   # soft red border
 
 st.set_page_config(
@@ -79,30 +92,59 @@ st.markdown(
         --surface-2: {SURFACE_2};
         --border: {BORDER};
       }}
-      .stApp {{ background-color: {SURFACE}; color: {INK}; }}
+      .stApp {{
+        background: linear-gradient(180deg, {PAGE_BG} 0%, {PAGE_BG_2} 100%);
+        background-attachment: fixed;
+        color: {INK};
+      }}
+      /* Make ALL text default to near-black so it's legible on mobile */
+      .stApp, .stApp p, .stApp span, .stApp div, .stApp label,
+      .stApp .stMarkdown, .stApp [data-testid="stMarkdownContainer"] {{
+        color: {INK};
+      }}
+      /* Form labels especially crisp */
+      .stApp label, .stApp .stCheckbox label, .stApp [data-baseweb="radio"] label,
+      .stApp [data-baseweb="form-control-label"] {{
+        color: {INK} !important;
+        font-weight: 500;
+      }}
+      /* Captions slightly lighter but still readable */
+      .stApp .stCaption, .stApp [data-testid="stCaptionContainer"] {{
+        color: {INK_SOFT} !important;
+      }}
+      /* Red top accent strip across the whole app */
+      .stApp::before {{
+        content: ""; position: fixed; top: 0; left: 0; right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, {NU_RED} 0%, {NU_RED_DARK} 50%, {NU_RED} 100%);
+        z-index: 999;
+      }}
+      .block-container {{ padding-top: 2.5rem !important; }}
       h1, h2, h3, h4 {{ color: {INK}; font-weight: 600; letter-spacing: -0.01em; }}
 
-      /* Hero — light, clean, with a red accent strip */
+      /* Hero — rich red & grey card */
       .hero {{
         position: relative;
-        display: flex; align-items: center; gap: 20px;
-        padding: 14px 24px 22px 28px;
+        display: flex; align-items: center; gap: 22px;
+        padding: 20px 26px 22px 32px;
         margin-bottom: 26px;
-        background: linear-gradient(180deg, {SURFACE_2} 0%, {SURFACE} 100%);
+        background: linear-gradient(135deg, {SURFACE} 0%, {NU_RED_TINT} 100%);
         border: 1px solid {BORDER};
         border-radius: 14px;
         overflow: hidden;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.04);
       }}
       .hero::before {{
         content: "";
         position: absolute; left: 0; top: 0; bottom: 0;
-        width: 5px; background: {NU_RED};
+        width: 6px;
+        background: linear-gradient(180deg, {NU_RED} 0%, {NU_RED_DARK} 100%);
       }}
       .hero::after {{
         content: "";
-        position: absolute; right: -40px; top: -40px;
-        width: 180px; height: 180px;
-        background: radial-gradient(circle, {NU_RED_TINT} 0%, transparent 70%);
+        position: absolute; right: -50px; top: -50px;
+        width: 220px; height: 220px;
+        background: radial-gradient(circle, rgba(200, 16, 46, 0.12) 0%, transparent 70%);
         pointer-events: none;
       }}
       .hero img {{
@@ -114,12 +156,14 @@ st.markdown(
       }}
       .hero .title {{
         color: {INK}; margin: 0; font-size: 30px;
-        font-weight: 700; letter-spacing: -0.02em;
+        font-weight: 800; letter-spacing: -0.02em;
       }}
       .hero .title .dot {{ color: {NU_RED}; }}
       .hero .subtitle {{
-        color: {INK_SOFT}; margin-top: 6px; font-size: 14px;
+        color: {INK}; margin-top: 6px; font-size: 14px;
+        font-weight: 500;
         display: flex; align-items: center; gap: 10px;
+        flex-wrap: wrap;
       }}
       .hero .tag {{
         display: inline-block; padding: 3px 10px;
@@ -128,28 +172,32 @@ st.markdown(
         letter-spacing: 0.6px; text-transform: uppercase;
       }}
 
-      /* Section card */
+      /* Section card — white pops against page grey */
       .section {{
         position: relative;
         background: {SURFACE};
         border: 1px solid {BORDER};
-        border-radius: 10px;
-        padding: 22px 26px 22px 30px;
+        border-radius: 12px;
+        padding: 22px 26px 22px 32px;
         margin-bottom: 16px;
-        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
       }}
       .section::before {{
         content: "";
-        position: absolute; left: 0; top: 22px; bottom: 22px;
-        width: 3px; background: {NU_RED}; border-radius: 3px;
-        opacity: 0.85;
+        position: absolute; left: 0; top: 0; bottom: 0;
+        width: 5px;
+        background: linear-gradient(180deg, {NU_RED} 0%, {NU_RED_DARK} 100%);
+        border-radius: 12px 0 0 12px;
       }}
       .section:hover {{
         border-color: {NU_RED_SOFT};
-        box-shadow: 0 2px 10px rgba(200, 16, 46, 0.05);
+        box-shadow: 0 6px 20px rgba(200, 16, 46, 0.08);
+        transform: translateY(-1px);
       }}
       .section h3 {{
-        margin: 0 0 4px 0; font-size: 17px; font-weight: 700;
+        margin: 0 0 4px 0; font-size: 18px; font-weight: 800;
+        color: {INK};
         display: flex; align-items: center; gap: 10px;
       }}
       .section h3 .num {{
@@ -163,11 +211,11 @@ st.markdown(
         color: {NU_RED}; font-size: 14px;
       }}
       .section .help {{
-        color: {INK_SOFT}; font-size: 13px; margin-bottom: 16px;
-        padding-left: 36px;
+        color: {INK_SOFT}; font-size: 14px; margin-bottom: 16px;
+        padding-left: 36px; font-weight: 500;
       }}
       .section .sublabel {{
-        font-size: 12px; font-weight: 700; text-transform: uppercase;
+        font-size: 13px; font-weight: 800; text-transform: uppercase;
         letter-spacing: 0.8px; color: {NU_RED}; margin: 16px 0 8px;
         display: flex; align-items: center; gap: 6px;
       }}
@@ -179,11 +227,12 @@ st.markdown(
       .review-card {{
         position: relative;
         border: 1px solid {BORDER};
-        border-left: 4px solid {NU_RED};
+        border-left: 5px solid {NU_RED};
         padding: 20px 22px;
         margin-bottom: 14px;
-        border-radius: 10px;
-        background: linear-gradient(180deg, {SURFACE} 0%, {SURFACE} 92%, {NU_RED_TINT} 100%);
+        border-radius: 12px;
+        background: linear-gradient(180deg, {SURFACE} 0%, {SURFACE} 88%, {NU_RED_TINT} 100%);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
         transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
       }}
       .review-card:hover {{
@@ -192,22 +241,26 @@ st.markdown(
         border-color: {NU_RED_SOFT};
       }}
       .review-card .role {{
-        font-size: 17px; font-weight: 700; color: {INK}; margin: 0;
+        font-size: 18px; font-weight: 800; color: {INK}; margin: 0;
       }}
-      .review-card .company {{ color: {NU_RED}; font-weight: 700; }}
+      .review-card .company {{ color: {NU_RED}; font-weight: 800; }}
       .review-card .meta {{
-        color: {INK_FAINT}; font-size: 13px; margin: 4px 0 14px;
+        color: {INK_SOFT}; font-size: 13px; margin: 4px 0 14px;
+        font-weight: 500;
       }}
       .review-card .meta .sep {{ color: {NU_RED}; margin: 0 6px; opacity: 0.7; }}
       .review-card .label {{
-        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        font-size: 12px; font-weight: 800; text-transform: uppercase;
         letter-spacing: 0.7px; color: {NU_RED}; margin: 16px 0 6px;
         display: flex; align-items: center; gap: 6px;
       }}
       .review-card .label::before {{
         content: "◆"; color: {NU_RED}; font-size: 9px;
       }}
-      .review-card p {{ margin: 4px 0 8px; color: {INK}; line-height: 1.55; font-size: 14px; }}
+      .review-card p {{
+        margin: 4px 0 8px; color: {INK}; line-height: 1.6;
+        font-size: 15px; font-weight: 500;
+      }}
 
       /* Skill bar */
       .skill-row {{
@@ -215,7 +268,7 @@ st.markdown(
         padding: 6px 0; gap: 14px;
       }}
       .skill-name {{
-        font-size: 13px; color: {INK}; min-width: 200px; font-weight: 500;
+        font-size: 14px; color: {INK}; min-width: 200px; font-weight: 600;
       }}
       .skill-name::before {{
         content: "▸"; color: {NU_RED}; margin-right: 6px; font-size: 11px;
@@ -232,15 +285,15 @@ st.markdown(
         box-shadow: 0 0 6px rgba(200, 16, 46, 0.25);
       }}
       .skill-score {{
-        font-size: 12px; color: {INK_SOFT}; min-width: 110px; text-align: right;
-        font-variant-numeric: tabular-nums; font-weight: 500;
+        font-size: 13px; color: {INK}; min-width: 110px; text-align: right;
+        font-variant-numeric: tabular-nums; font-weight: 600;
       }}
 
       /* Tag chips — slightly nicer with subtle markers */
       .chip {{
         display: inline-flex; align-items: center; gap: 5px;
-        padding: 4px 11px; margin: 3px 4px 3px 0;
-        border-radius: 6px; font-size: 12px; font-weight: 500;
+        padding: 5px 12px; margin: 3px 4px 3px 0;
+        border-radius: 6px; font-size: 13px; font-weight: 600;
         background: {SURFACE_2}; color: {INK}; border: 1px solid {BORDER};
         transition: background 0.15s ease, transform 0.1s ease;
       }}
@@ -248,7 +301,8 @@ st.markdown(
       .chip-skill {{
         background: linear-gradient(135deg, {NU_RED} 0%, {NU_RED_DARK} 100%);
         color: white; border-color: {NU_RED_DARK};
-        box-shadow: 0 1px 2px rgba(200, 16, 46, 0.2);
+        font-weight: 700;
+        box-shadow: 0 1px 2px rgba(200, 16, 46, 0.25);
       }}
       .chip-skill::before {{ content: "◆"; font-size: 8px; opacity: 0.85; }}
       .chip-course {{
@@ -287,10 +341,10 @@ st.markdown(
       }}
       .stButton > button:active {{ transform: translateY(1px); }}
 
-      /* Sidebar — light, not dark, with red accent */
+      /* Sidebar — warm grey with red accent */
       section[data-testid="stSidebar"] {{
-        background: linear-gradient(180deg, {SURFACE_2} 0%, #EFEFEF 100%);
-        border-right: 1px solid {BORDER};
+        background: linear-gradient(180deg, #EAE7E1 0%, #DEDAD3 100%);
+        border-right: 2px solid {NU_RED};
       }}
       section[data-testid="stSidebar"] * {{ color: {INK} !important; }}
       section[data-testid="stSidebar"] [data-baseweb="radio"] label {{ font-weight: 500; }}
@@ -298,10 +352,11 @@ st.markdown(
 
       /* Filter bar */
       .filter-bar {{
-        background: linear-gradient(180deg, {SURFACE_2} 0%, {SURFACE} 100%);
+        background: linear-gradient(135deg, {SURFACE} 0%, {NU_RED_TINT} 100%);
         padding: 16px 18px; border-radius: 10px;
         border: 1px solid {BORDER}; margin-bottom: 18px;
-        border-left: 3px solid {NU_RED};
+        border-left: 4px solid {NU_RED};
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
       }}
       hr {{ border-color: {BORDER}; }}
 
@@ -542,18 +597,56 @@ COURSES = [
     "Other / Not listed",
 ]
 
-# ---------- DB ----------
+# ---------- DB (Supabase Postgres) ----------
+def _get_db_url() -> str:
+    """Find the Postgres URL in Streamlit secrets under any common key."""
+    # 1. Recommended layout: [connections.supabase] url = "..."
+    try:
+        return st.secrets["connections"]["supabase"]["url"]
+    except Exception:
+        pass
+    # 2. Bare [supabase] url = "..."
+    try:
+        return st.secrets["supabase"]["url"]
+    except Exception:
+        pass
+    # 3. Common bare keys
+    for key in ("DATABASE_URL", "postgres_url", "POSTGRES_URL", "SUPABASE_URL"):
+        try:
+            v = st.secrets[key]
+            if isinstance(v, str) and v.startswith("postgres"):
+                return v
+        except Exception:
+            continue
+    return ""
+
+@st.cache_resource(show_spinner=False)
+def _get_pool() -> ConnectionPool:
+    url = _get_db_url()
+    if not url:
+        raise RuntimeError(
+            "No Supabase connection string found. In your Streamlit app's "
+            "Settings → Secrets, add:\n\n"
+            '[connections.supabase]\n'
+            'url = "postgresql://postgres.xxxxx:PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres"'
+        )
+    return ConnectionPool(
+        conninfo=url,
+        min_size=1, max_size=5,
+        kwargs={"row_factory": dict_row, "autocommit": True},
+        open=True,
+    )
+
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Borrow a connection from the pool. Use as a context manager."""
+    return _get_pool().connection()
 
 def init_db():
     with get_conn() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reviews (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 created_at TEXT NOT NULL,
                 company TEXT NOT NULL,
                 role TEXT NOT NULL,
@@ -570,7 +663,7 @@ def init_db():
             )
             """
         )
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(reviews)").fetchall()}
+        # Add new columns if missing (idempotent migration)
         new_cols = {
             "college": "TEXT",
             "skill_ratings": "TEXT",
@@ -586,11 +679,21 @@ def init_db():
             "return_offer": "TEXT",
         }
         for col, type_ in new_cols.items():
-            if col not in existing:
-                conn.execute(f"ALTER TABLE reviews ADD COLUMN {col} {type_}")
-        conn.commit()
+            conn.execute(f"ALTER TABLE reviews ADD COLUMN IF NOT EXISTS {col} {type_}")
 
-init_db()
+# Run schema setup, with a friendly UI error if Supabase isn't reachable
+try:
+    init_db()
+except Exception as _db_err:
+    st.error("Couldn't connect to the database.")
+    st.code(str(_db_err), language="text")
+    st.info(
+        "On Streamlit Cloud: open your app → Settings → Secrets and add your "
+        "Supabase connection string. Format:\n\n"
+        '[connections.supabase]\nurl = "postgresql://postgres.xxxxx:PASSWORD@aws-0-..."\n\n'
+        "Use the **Transaction pooler** URL (port 6543) from Supabase → Connect → URI."
+    )
+    st.stop()
 
 # ---------- FILTER ----------
 BANNED_WORDS = {
@@ -677,12 +780,16 @@ def safe_json(s):
     except Exception:
         return {}
 
-def has_col(row: sqlite3.Row, col: str) -> bool:
-    return col in row.keys()
+def has_col(row, col: str) -> bool:
+    # row is a dict (psycopg dict_row) — `in row` checks keys
+    try:
+        return col in row
+    except Exception:
+        return False
 
 NUM_TO_LEVEL = {v: k for k, v in LEVEL_TO_NUM.items()}
 
-def render_review_card(row: sqlite3.Row):
+def render_review_card(row: dict):
     skill_ratings = safe_json(row["skill_ratings"]) if has_col(row, "skill_ratings") else {}
     if isinstance(skill_ratings, dict):
         skill_ratings = {k: int(v) for k, v in skill_ratings.items() if v and int(v) > 0}
@@ -809,6 +916,7 @@ if page == "Browse reviews":
 
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reviews ORDER BY created_at DESC").fetchall()
+    rows = list(rows)
 
     if not rows:
         st.info("No reviews yet — be the first to share your co-op.")
@@ -937,8 +1045,10 @@ elif page == "Submit a review":
         help="Pick the colleges relevant to your role — soft skills are always available below.",
     )
 
-    # Render checkboxes (3-col grid) per shown category
-    checked_skills: list[str] = []
+    # Render checkboxes (3-col grid) per shown category.
+    # Key is scoped to (category, skill) so the same skill appearing in
+    # multiple categories doesn't collide. We dedupe afterwards.
+    checked_skills_raw: list[str] = []
     for cat in skill_categories_shown:
         st.markdown(
             f"<div style='font-size:13px; font-weight:600; color:{INK}; margin: 14px 0 6px;'>{cat}</div>",
@@ -948,8 +1058,12 @@ elif page == "Submit a review":
         cols = st.columns(3)
         for i, sk in enumerate(skills):
             with cols[i % 3]:
-                if st.checkbox(sk, key=f"chk__{sk}"):
-                    checked_skills.append(sk)
+                # category prefix prevents duplicate-key crashes
+                key = f"chk__{cat[:20]}__{sk}"
+                if st.checkbox(sk, key=key):
+                    checked_skills_raw.append(sk)
+    # dedupe while preserving order
+    checked_skills = list(dict.fromkeys(checked_skills_raw))
 
     # Sliders only for checked skills (this is the dynamic part)
     skill_ratings: dict[str, int] = {}
@@ -1156,7 +1270,7 @@ elif page == "Submit a review":
                                 perks, culture_tags, coop_count, return_offer,
                                 skills, courses, clubs, prior_experience,
                                 what_you_did, what_you_learned, advice)
-                               VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)""",
+                               VALUES (%s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s)""",
                             (
                                 datetime.utcnow().isoformat(),
                                 company.strip(), role.strip(), industry, semester,
@@ -1181,7 +1295,6 @@ elif page == "Submit a review":
                                 advice.strip(),
                             ),
                         )
-                        conn.commit()
                     st.success("Thanks — your review is live on the Browse page.")
 
 # ================ STATS ================
@@ -1189,6 +1302,7 @@ elif page == "Stats":
     st.subheader("Community stats")
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reviews").fetchall()
+    rows = list(rows)
     if not rows:
         st.info("Stats will appear once reviews are posted.")
     else:
