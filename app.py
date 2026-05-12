@@ -757,7 +757,9 @@ def render_hero():
     cols = st.columns([1, 6], gap="medium")
     with cols[0]:
         if LOGO_PATH is not None and LOGO_PATH.exists():
-            st.image(str(LOGO_PATH), width=96)
+            # Pass raw bytes, not the path — avoids Streamlit guessing the
+            # format from the extension (file may be a PNG named .svg etc.)
+            st.image(LOGO_PATH.read_bytes(), width=96)
         else:
             st.markdown(
                 f"<div style='width:96px; height:96px; border-radius:14px; "
