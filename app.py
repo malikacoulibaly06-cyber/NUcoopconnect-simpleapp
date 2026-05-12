@@ -5,10 +5,10 @@ Skill-based, anonymous, free to host on Streamlit Community Cloud.
 
 import sqlite3
 import re
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 # ---------- CONFIG ----------
@@ -232,36 +232,41 @@ if page == "Browse Reviews":
     st.subheader("Browse co-op reviews")
 
     with get_conn() as conn:
-        df = pd.read_sql_query("SELECT * FROM reviews ORDER BY created_at DESC", conn)
+        rows = conn.execute("SELECT * FROM reviews ORDER BY created_at DESC").fetchall()
 
-    if df.empty:
+    if not rows:
         st.info("No reviews yet — be the first to share!")
     else:
+        industries_available = sorted({r["industry"] for r in rows})
+        all_skills = sorted({
+            s.strip()
+            for r in rows
+            for s in (r["skills"] or "").split(",")
+            if s.strip()
+        })
+
         c1, c2, c3 = st.columns(3)
         with c1:
-            ind_filter = st.multiselect("Industry", sorted(df["industry"].unique()))
+            ind_filter = st.multiselect("Industry", industries_available)
         with c2:
             role_filter = st.text_input("Role contains", "")
         with c3:
-            all_skills = sorted({
-                s.strip() for row in df["skills"].dropna() for s in row.split(",") if s.strip()
-            })
             skill_filter = st.multiselect("Skills earned", all_skills)
 
-        filtered = df.copy()
-        if ind_filter:
-            filtered = filtered[filtered["industry"].isin(ind_filter)]
-        if role_filter:
-            filtered = filtered[filtered["role"].str.contains(role_filter, case=False, na=False)]
-        if skill_filter:
-            filtered = filtered[
-                filtered["skills"].fillna("").apply(
-                    lambda s: all(sk in [x.strip() for x in s.split(",")] for sk in skill_filter)
-                )
-            ]
+        def keep(r):
+            if ind_filter and r["industry"] not in ind_filter:
+                return False
+            if role_filter and role_filter.lower() not in (r["role"] or "").lower():
+                return False
+            if skill_filter:
+                row_skills = {s.strip() for s in (r["skills"] or "").split(",")}
+                if not all(sk in row_skills for sk in skill_filter):
+                    return False
+            return True
 
-        st.caption(f"Showing **{len(filtered)}** of {len(df)} reviews")
-        for _, row in filtered.iterrows():
+        filtered = [r for r in rows if keep(r)]
+        st.caption(f"Showing **{len(filtered)}** of {len(rows)} reviews")
+        for row in filtered:
             render_review_card(row)
 
 # ---------- SUBMIT ----------
@@ -347,31 +352,32 @@ elif page == "Submit a Review":
 elif page == "Stats":
     st.subheader("Community stats")
     with get_conn() as conn:
-        df = pd.read_sql_query("SELECT * FROM reviews", conn)
-    if df.empty:
+        rows = conn.execute("SELECT * FROM reviews").fetchall()
+    if not rows:
         st.info("Stats will appear once reviews are posted.")
     else:
+        total = len(rows)
+        unique_companies = len({r["company"] for r in rows})
+        avg_rating = sum(r["rating"] for r in rows) / total
+
         c1, c2, c3 = st.columns(3)
-        c1.metric("Total reviews", len(df))
-        c2.metric("Unique companies", df["company"].nunique())
-        c3.metric("Average rating", f"{df['rating'].mean():.2f} / 5")
+        c1.metric("Total reviews", total)
+        c2.metric("Unique companies", unique_companies)
+        c3.metric("Average rating", f"{avg_rating:.2f} / 5")
 
         st.markdown("### Reviews by industry")
-        st.bar_chart(df["industry"].value_counts())
+        st.bar_chart(dict(Counter(r["industry"] for r in rows)))
 
         st.markdown("### Top skills earned")
-        skill_counts: dict[str, int] = {}
-        for s in df["skills"].dropna():
-            for sk in s.split(","):
+        skill_counts: Counter = Counter()
+        for r in rows:
+            for sk in (r["skills"] or "").split(","):
                 sk = sk.strip()
                 if sk:
-                    skill_counts[sk] = skill_counts.get(sk, 0) + 1
+                    skill_counts[sk] += 1
         if skill_counts:
-            skill_df = (
-                pd.DataFrame(skill_counts.items(), columns=["Skill", "Count"])
-                .sort_values("Count", ascending=False).head(15)
-            )
-            st.bar_chart(skill_df.set_index("Skill"))
+            top = dict(skill_counts.most_common(15))
+            st.bar_chart(top)
 
 # ---------- ABOUT ----------
 else:
