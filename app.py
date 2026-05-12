@@ -52,10 +52,22 @@ def _find_logo() -> Path | None:
     return pool[0]
 
 LOGO_PATH = _find_logo()
-LOGO_MIME = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".webp": "image/webp", ".svg": "image/svg+xml",
-}
+
+def _detect_mime(path: Path) -> str:
+    """Detect image MIME from magic bytes — ignores the file extension."""
+    try:
+        head = path.read_bytes()[:32]
+    except Exception:
+        return "image/png"
+    if head.startswith(b"\x89PNG"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head.lstrip().startswith((b"<?xml", b"<svg")):
+        return "image/svg+xml"
+    return "image/png"  # safe default
 
 # Light, refined palette — no pure black
 NU_RED = "#C8102E"
@@ -723,7 +735,7 @@ def is_constructive(*texts: str) -> tuple[bool, str]:
 def render_hero():
     logo_html = ""
     if LOGO_PATH is not None and LOGO_PATH.exists():
-        mime = LOGO_MIME.get(LOGO_PATH.suffix.lower(), "image/png")
+        mime = _detect_mime(LOGO_PATH)
         b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
         logo_html = f'<img src="data:{mime};base64,{b64}" alt="NU Coop Connect"/>'
     st.markdown(
