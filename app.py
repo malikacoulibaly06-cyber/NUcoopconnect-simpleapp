@@ -18,11 +18,27 @@ BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "reviews.db"
 
 def _find_logo() -> Path | None:
+    # 1. Exact matches first
     for name in ("logo.png", "logo.jpg", "logo.jpeg", "logo.webp", "logo.svg"):
         p = BASE_DIR / name
         if p.exists():
             return p
-    return None
+    # 2. Any file whose name contains "logo" or "coop" (case-insensitive)
+    exts = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+    candidates = [
+        p for p in BASE_DIR.iterdir()
+        if p.is_file()
+        and p.suffix.lower() in exts
+        and any(kw in p.stem.lower() for kw in ("logo", "coop", "husky"))
+    ]
+    if candidates:
+        # Prefer PNG > JPG > WEBP > SVG
+        priority = {".png": 0, ".jpg": 1, ".jpeg": 1, ".webp": 2, ".svg": 3}
+        candidates.sort(key=lambda p: priority.get(p.suffix.lower(), 9))
+        return candidates[0]
+    # 3. Fall back to any image in the folder
+    any_imgs = [p for p in BASE_DIR.iterdir() if p.is_file() and p.suffix.lower() in exts]
+    return any_imgs[0] if any_imgs else None
 
 LOGO_PATH = _find_logo()
 LOGO_MIME = {
@@ -34,6 +50,7 @@ LOGO_MIME = {
 NU_RED = "#C8102E"
 NU_RED_SOFT = "#E63E55"
 NU_RED_DARK = "#A00D24"
+NU_RED_TINT = "#FCEEF0"   # very faint red wash for accents
 INK = "#2D2D2D"          # primary text (warm dark grey, not black)
 INK_SOFT = "#5A5A5A"     # secondary text
 INK_FAINT = "#8B8B8B"    # captions
@@ -41,6 +58,7 @@ SURFACE = "#FFFFFF"
 SURFACE_2 = "#F8F8F8"    # section backgrounds
 SURFACE_3 = "#F2F2F2"    # subtle dividers
 BORDER = "#E2E2E2"
+BORDER_RED = "#F2CFD4"   # soft red border
 
 st.set_page_config(
     page_title="NU Coop Connect",
@@ -64,113 +82,241 @@ st.markdown(
       .stApp {{ background-color: {SURFACE}; color: {INK}; }}
       h1, h2, h3, h4 {{ color: {INK}; font-weight: 600; letter-spacing: -0.01em; }}
 
-      /* Hero — light, clean, no gradient banner */
+      /* Hero — light, clean, with a red accent strip */
       .hero {{
-        display: flex; align-items: center; gap: 18px;
-        padding: 10px 0 22px;
-        border-bottom: 1px solid {BORDER};
-        margin-bottom: 24px;
+        position: relative;
+        display: flex; align-items: center; gap: 20px;
+        padding: 14px 24px 22px 28px;
+        margin-bottom: 26px;
+        background: linear-gradient(180deg, {SURFACE_2} 0%, {SURFACE} 100%);
+        border: 1px solid {BORDER};
+        border-radius: 14px;
+        overflow: hidden;
+      }}
+      .hero::before {{
+        content: "";
+        position: absolute; left: 0; top: 0; bottom: 0;
+        width: 5px; background: {NU_RED};
+      }}
+      .hero::after {{
+        content: "";
+        position: absolute; right: -40px; top: -40px;
+        width: 180px; height: 180px;
+        background: radial-gradient(circle, {NU_RED_TINT} 0%, transparent 70%);
+        pointer-events: none;
       }}
       .hero img {{
-        height: 64px; width: 64px;
-        border-radius: 12px;
+        height: 72px; width: 72px;
+        border-radius: 14px;
         background: {SURFACE_2};
         object-fit: cover;
+        box-shadow: 0 2px 8px rgba(200, 16, 46, 0.12);
       }}
-      .hero .title {{ color: {INK}; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }}
-      .hero .subtitle {{ color: {INK_SOFT}; margin-top: 4px; font-size: 14px; }}
+      .hero .title {{
+        color: {INK}; margin: 0; font-size: 30px;
+        font-weight: 700; letter-spacing: -0.02em;
+      }}
+      .hero .title .dot {{ color: {NU_RED}; }}
+      .hero .subtitle {{
+        color: {INK_SOFT}; margin-top: 6px; font-size: 14px;
+        display: flex; align-items: center; gap: 10px;
+      }}
+      .hero .tag {{
+        display: inline-block; padding: 3px 10px;
+        background: {NU_RED}; color: white;
+        border-radius: 4px; font-size: 11px; font-weight: 600;
+        letter-spacing: 0.6px; text-transform: uppercase;
+      }}
 
       /* Section card */
       .section {{
+        position: relative;
         background: {SURFACE};
         border: 1px solid {BORDER};
         border-radius: 10px;
-        padding: 22px 26px;
+        padding: 22px 26px 22px 30px;
         margin-bottom: 16px;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
       }}
-      .section:hover {{ border-color: #D5D5D5; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }}
-      .section h3 {{ margin: 0 0 4px 0; font-size: 17px; font-weight: 600; }}
-      .section .help {{ color: {INK_SOFT}; font-size: 13px; margin-bottom: 16px; }}
+      .section::before {{
+        content: "";
+        position: absolute; left: 0; top: 22px; bottom: 22px;
+        width: 3px; background: {NU_RED}; border-radius: 3px;
+        opacity: 0.85;
+      }}
+      .section:hover {{
+        border-color: {NU_RED_SOFT};
+        box-shadow: 0 2px 10px rgba(200, 16, 46, 0.05);
+      }}
+      .section h3 {{
+        margin: 0 0 4px 0; font-size: 17px; font-weight: 700;
+        display: flex; align-items: center; gap: 10px;
+      }}
+      .section h3 .num {{
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px;
+        background: {NU_RED}; color: white;
+        border-radius: 6px; font-size: 13px; font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }}
+      .section h3 .marker {{
+        color: {NU_RED}; font-size: 14px;
+      }}
+      .section .help {{
+        color: {INK_SOFT}; font-size: 13px; margin-bottom: 16px;
+        padding-left: 36px;
+      }}
+      .section .sublabel {{
+        font-size: 12px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.8px; color: {NU_RED}; margin: 16px 0 8px;
+        display: flex; align-items: center; gap: 6px;
+      }}
+      .section .sublabel::before {{
+        content: "▎"; color: {NU_RED}; font-size: 14px;
+      }}
 
       /* Review card */
       .review-card {{
+        position: relative;
         border: 1px solid {BORDER};
-        border-left: 3px solid {NU_RED};
+        border-left: 4px solid {NU_RED};
         padding: 20px 22px;
         margin-bottom: 14px;
         border-radius: 10px;
-        background: {SURFACE};
-        transition: box-shadow 0.18s ease, transform 0.18s ease;
+        background: linear-gradient(180deg, {SURFACE} 0%, {SURFACE} 92%, {NU_RED_TINT} 100%);
+        transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
       }}
       .review-card:hover {{
-        box-shadow: 0 4px 14px rgba(0,0,0,0.06);
-        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(200, 16, 46, 0.08);
+        transform: translateY(-2px);
+        border-color: {NU_RED_SOFT};
       }}
       .review-card .role {{
-        font-size: 17px; font-weight: 600; color: {INK}; margin: 0;
+        font-size: 17px; font-weight: 700; color: {INK}; margin: 0;
       }}
-      .review-card .company {{ color: {NU_RED}; font-weight: 600; }}
-      .review-card .meta {{ color: {INK_FAINT}; font-size: 13px; margin: 4px 0 14px; }}
+      .review-card .company {{ color: {NU_RED}; font-weight: 700; }}
+      .review-card .meta {{
+        color: {INK_FAINT}; font-size: 13px; margin: 4px 0 14px;
+      }}
+      .review-card .meta .sep {{ color: {NU_RED}; margin: 0 6px; opacity: 0.7; }}
       .review-card .label {{
-        font-size: 11px; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.7px; color: {INK_SOFT}; margin: 16px 0 6px;
+        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.7px; color: {NU_RED}; margin: 16px 0 6px;
+        display: flex; align-items: center; gap: 6px;
+      }}
+      .review-card .label::before {{
+        content: "◆"; color: {NU_RED}; font-size: 9px;
       }}
       .review-card p {{ margin: 4px 0 8px; color: {INK}; line-height: 1.55; font-size: 14px; }}
 
       /* Skill bar */
       .skill-row {{
         display: flex; align-items: center; justify-content: space-between;
-        padding: 5px 0; gap: 14px;
+        padding: 6px 0; gap: 14px;
       }}
-      .skill-name {{ font-size: 13px; color: {INK}; min-width: 200px; }}
+      .skill-name {{
+        font-size: 13px; color: {INK}; min-width: 200px; font-weight: 500;
+      }}
+      .skill-name::before {{
+        content: "▸"; color: {NU_RED}; margin-right: 6px; font-size: 11px;
+      }}
       .skill-bar-wrap {{
-        flex: 1; height: 6px; background: {SURFACE_3}; border-radius: 999px; overflow: hidden;
+        flex: 1; height: 7px; background: {SURFACE_3}; border-radius: 999px; overflow: hidden;
+        position: relative;
       }}
       .skill-bar {{
-        height: 100%; background: {NU_RED}; border-radius: 999px;
-        transition: width 0.4s ease;
+        height: 100%;
+        background: linear-gradient(90deg, {NU_RED} 0%, {NU_RED_SOFT} 100%);
+        border-radius: 999px;
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 0 6px rgba(200, 16, 46, 0.25);
       }}
       .skill-score {{
-        font-size: 12px; color: {INK_SOFT}; min-width: 90px; text-align: right;
-        font-variant-numeric: tabular-nums;
+        font-size: 12px; color: {INK_SOFT}; min-width: 110px; text-align: right;
+        font-variant-numeric: tabular-nums; font-weight: 500;
       }}
 
-      /* Tag chips */
+      /* Tag chips — slightly nicer with subtle markers */
       .chip {{
-        display: inline-block; padding: 4px 11px; margin: 3px 4px 3px 0;
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 11px; margin: 3px 4px 3px 0;
         border-radius: 6px; font-size: 12px; font-weight: 500;
         background: {SURFACE_2}; color: {INK}; border: 1px solid {BORDER};
-        transition: background 0.15s ease;
+        transition: background 0.15s ease, transform 0.1s ease;
       }}
-      .chip-skill {{ background: {NU_RED}; color: white; border-color: {NU_RED}; }}
-      .chip-course {{ background: {SURFACE_3}; color: {INK}; border-color: {BORDER}; }}
-      .chip-club {{ background: {SURFACE_2}; color: {INK}; border: 1px solid {INK_SOFT}; }}
-      .chip-perk {{ background: #ECFDF5; color: #065F46; border-color: #BBF7D0; }}
-      .chip-culture {{ background: #FEF2F2; color: {NU_RED_DARK}; border-color: #FECACA; }}
-      .chip-meta {{ background: #EEF2FF; color: #3730A3; border-color: #C7D2FE; }}
+      .chip:hover {{ transform: translateY(-1px); }}
+      .chip-skill {{
+        background: linear-gradient(135deg, {NU_RED} 0%, {NU_RED_DARK} 100%);
+        color: white; border-color: {NU_RED_DARK};
+        box-shadow: 0 1px 2px rgba(200, 16, 46, 0.2);
+      }}
+      .chip-skill::before {{ content: "◆"; font-size: 8px; opacity: 0.85; }}
+      .chip-course {{
+        background: {SURFACE_3}; color: {INK}; border-color: {BORDER};
+      }}
+      .chip-course::before {{ content: "▸"; color: {NU_RED}; font-size: 10px; }}
+      .chip-club {{
+        background: {SURFACE_2}; color: {INK}; border: 1px solid {INK_SOFT};
+      }}
+      .chip-club::before {{ content: "●"; color: {INK_SOFT}; font-size: 8px; }}
+      .chip-perk {{
+        background: #ECFDF5; color: #065F46; border-color: #BBF7D0;
+      }}
+      .chip-perk::before {{ content: "✓"; font-size: 10px; font-weight: 700; }}
+      .chip-culture {{
+        background: {NU_RED_TINT}; color: {NU_RED_DARK}; border-color: {BORDER_RED};
+      }}
+      .chip-culture::before {{ content: "◇"; font-size: 9px; }}
+      .chip-meta {{
+        background: #EEF2FF; color: #3730A3; border-color: #C7D2FE;
+      }}
+      .chip-meta::before {{ content: "▸"; font-size: 9px; }}
 
       /* Buttons */
       .stButton > button {{
-        background-color: {NU_RED}; color: white;
-        border: none; font-weight: 600;
-        padding: 10px 22px; border-radius: 8px;
-        transition: background 0.15s ease, transform 0.06s ease;
+        background: linear-gradient(135deg, {NU_RED} 0%, {NU_RED_DARK} 100%);
+        color: white; border: none; font-weight: 600;
+        padding: 11px 26px; border-radius: 8px;
+        letter-spacing: 0.2px;
+        transition: filter 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
+        box-shadow: 0 2px 6px rgba(200, 16, 46, 0.25);
       }}
-      .stButton > button:hover {{ background-color: {NU_RED_DARK}; }}
+      .stButton > button:hover {{
+        filter: brightness(1.08);
+        box-shadow: 0 4px 12px rgba(200, 16, 46, 0.35);
+      }}
       .stButton > button:active {{ transform: translateY(1px); }}
 
-      /* Sidebar — light, not dark */
-      section[data-testid="stSidebar"] {{ background-color: {SURFACE_2}; }}
+      /* Sidebar — light, not dark, with red accent */
+      section[data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, {SURFACE_2} 0%, #EFEFEF 100%);
+        border-right: 1px solid {BORDER};
+      }}
       section[data-testid="stSidebar"] * {{ color: {INK} !important; }}
       section[data-testid="stSidebar"] [data-baseweb="radio"] label {{ font-weight: 500; }}
+      section[data-testid="stSidebar"] [data-baseweb="radio"] label:hover {{ color: {NU_RED} !important; }}
 
       /* Filter bar */
       .filter-bar {{
-        background: {SURFACE_2}; padding: 14px 16px; border-radius: 10px;
+        background: linear-gradient(180deg, {SURFACE_2} 0%, {SURFACE} 100%);
+        padding: 16px 18px; border-radius: 10px;
         border: 1px solid {BORDER}; margin-bottom: 18px;
+        border-left: 3px solid {NU_RED};
       }}
       hr {{ border-color: {BORDER}; }}
+
+      /* Metric cards (Stats page) */
+      [data-testid="stMetricValue"] {{
+        color: {NU_RED} !important;
+        font-weight: 700 !important;
+      }}
+      [data-testid="stMetricLabel"] {{
+        color: {INK_SOFT} !important;
+        font-weight: 600 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-size: 11px !important;
+      }}
 
       /* Tighter form spacing */
       .stMultiSelect, .stTextInput, .stSelectbox, .stTextArea, .stNumberInput {{ margin-bottom: 8px; }}
@@ -482,8 +628,11 @@ def render_hero():
         <div class="hero">
           {logo_html}
           <div>
-            <div class="title">NU Coop Connect</div>
-            <div class="subtitle">Anonymous, skill-based co-op reviews — by Huskies, for Huskies.</div>
+            <div class="title">NU Coop Connect<span class="dot"> ●</span></div>
+            <div class="subtitle">
+              <span class="tag">Anonymous</span>
+              <span>Skill-based co-op reviews — by Huskies, for Huskies.</span>
+            </div>
           </div>
         </div>
         """,
@@ -623,7 +772,7 @@ def render_review_card(row: sqlite3.Row):
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
             <div>
               <p class="role">{row["role"]} <span style="color:{INK_FAINT}; font-weight:400;">at</span> <span class="company">{row["company"]}</span></p>
-              <p class="meta">{row["industry"]} · {row["semester"] or "Semester N/A"} · Posted {row["created_at"][:10]}</p>
+              <p class="meta">{row["industry"]}<span class="sep">◆</span>{row["semester"] or "Semester N/A"}<span class="sep">◆</span>Posted {row["created_at"][:10]}</p>
               {('<div style="margin: 6px 0;">' + college_chip + '</div>') if college_chip else ''}
             </div>
           </div>
@@ -724,7 +873,7 @@ elif page == "Submit a review":
     # ---------- SECTION 1: BASICS ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>1. Co-op basics</h3>'
+        f'<h3><span class="num">1</span> Co-op basics</h3>'
         f'<div class="help">The company, your role, and which Northeastern college you\'re in.</div>',
         unsafe_allow_html=True,
     )
@@ -754,7 +903,7 @@ elif page == "Submit a review":
     # ---------- SECTION 2: SKILLS (dynamic) ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>2. Skills you used on this co-op</h3>'
+        f'<h3><span class="num">2</span> Skills you used on this co-op</h3>'
         f'<div class="help">Filter the list by college, check the skills you used, then rate each one. '
         f'<em>{LEVEL_HELP}</em></div>',
         unsafe_allow_html=True,
@@ -833,7 +982,7 @@ elif page == "Submit a review":
     # ---------- SECTION 3: INTERVIEW ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>3. Interview process</h3>'
+        f'<h3><span class="num">3</span> Interview process</h3>'
         f'<div class="help">Help future applicants know what to expect.</div>',
         unsafe_allow_html=True,
     )
@@ -863,11 +1012,11 @@ elif page == "Submit a review":
     # ---------- SECTION 4: PERKS + CULTURE ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>4. Compensation, perks & culture</h3>'
+        f'<h3><span class="num">4</span> Compensation, perks & culture</h3>'
         f'<div class="help">Check anything that applied. Skip what didn\'t.</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(f"<div style='font-weight:600; margin: 2px 0 6px;'>Perks & compensation</div>", unsafe_allow_html=True)
+    st.markdown('<div class="sublabel">Perks & compensation</div>', unsafe_allow_html=True)
     perks: list[str] = []
     for i in range(0, len(PERKS_LIST), 3):
         cc = st.columns(3)
@@ -878,7 +1027,7 @@ elif page == "Submit a review":
                     if st.checkbox(p, key=f"perk__{p}"):
                         perks.append(p)
 
-    st.markdown(f"<div style='font-weight:600; margin: 14px 0 6px;'>Culture & connections</div>", unsafe_allow_html=True)
+    st.markdown('<div class="sublabel">Culture & connections</div>', unsafe_allow_html=True)
     culture_tags: list[str] = []
     for i in range(0, len(CULTURE_TAGS), 3):
         cc = st.columns(3)
@@ -898,7 +1047,7 @@ elif page == "Submit a review":
     # ---------- SECTION 5: EXPERIENCE ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>5. Your experience</h3>'
+        f'<h3><span class="num">5</span> Your experience</h3>'
         f'<div class="help">Short, specific, helpful. Profanity / all-caps will be auto-rejected.</div>',
         unsafe_allow_html=True,
     )
@@ -922,7 +1071,7 @@ elif page == "Submit a review":
     # ---------- SECTION 6: WHAT PREPARED YOU + OPTIONAL RIASEC ----------
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown(
-        f'<h3>6. What prepared you (optional)</h3>'
+        f'<h3><span class="num">6</span> What prepared you (optional)</h3>'
         f'<div class="help">Help juniors pick the right courses and clubs.</div>',
         unsafe_allow_html=True,
     )
